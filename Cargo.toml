@@ -2,6 +2,11 @@
 name = "opt"
 version = "0.1.0"
 edition = "2024"
+description = "A no-magic option parser for Rust"
+license = "MIT"
+authors = ["Josh Voigts <joshvoigts@gmail.com>"]
+repository = "https://github.com/joshvoigts/opt"
+readme = "README.md"
 
 [dependencies]
 anyhow = "1.0.98"
