@@ -1,4 +1,4 @@
-# opt
+# optz
 
 A no-magic option parser for Rust.
 
@@ -6,9 +6,9 @@ A no-magic option parser for Rust.
 ## Usage
 
 ```rust
-use opt::{Opts, Opt};
+use optz::{Opt, Optz};
 
-let opts = Opts::new("myapp")
+let opts = Optz::new("myapp")
   .option(
     Opt::new("blah")
       .description("An operation that performs blah")

@@ -8,9 +8,9 @@ use std::process;
 use crate::fail;
 
 #[derive(Default)]
-pub struct Opts {
+pub struct Optz {
   pub args: BTreeSet<String>,
-  pub handler: Option<fn(&Opts) -> Result<()>>,
+  pub handler: Option<fn(&Optz) -> Result<()>>,
   pub name: String,
   pub usage: Option<String>,
   pub description: Option<String>,
@@ -20,7 +20,7 @@ pub struct Opts {
   pub rest: Vec<String>,
 }
 
-impl Opts {
+impl Optz {
   pub fn new(name: &str) -> Self {
     Self {
       args: env::args().skip(1).collect(),
@@ -54,7 +54,7 @@ impl Opts {
     None
   }
 
-  pub fn handler(mut self, handler: fn(&Opts) -> Result<()>) -> Self {
+  pub fn handler(mut self, handler: fn(&Optz) -> Result<()>) -> Self {
     self.handler = Some(handler);
     self
   }
@@ -155,7 +155,7 @@ impl Opts {
   }
 }
 
-impl IntoIterator for Opts {
+impl IntoIterator for Optz {
   type Item = Opt;
   type IntoIter = std::vec::IntoIter<Self::Item>;
 
@@ -167,7 +167,7 @@ impl IntoIterator for Opts {
 #[derive(Clone, Default)]
 pub struct Opt {
   pub description: Option<String>,
-  pub handler: Option<fn(&Opts) -> Result<()>>,
+  pub handler: Option<fn(&Optz) -> Result<()>>,
   pub long: String,
   pub name: String,
   pub short: Option<String>,
@@ -195,7 +195,7 @@ impl Opt {
     self
   }
 
-  pub fn handler(mut self, handler: fn(&Opts) -> Result<()>) -> Self {
+  pub fn handler(mut self, handler: fn(&Optz) -> Result<()>) -> Self {
     self.handler = Some(handler);
     self
   }

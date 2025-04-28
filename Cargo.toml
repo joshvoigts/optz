@@ -1,5 +1,5 @@
 [package]
-name = "opt"
+name = "optz"
 version = "0.1.0"
 edition = "2024"
 description = "A no-magic option parser for Rust"
