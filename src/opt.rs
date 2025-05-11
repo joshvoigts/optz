@@ -1,13 +1,14 @@
-use anyhow::Result;
+use anyhow::{anyhow, Result};
 use std::any::Any;
 use std::collections::BTreeSet;
 use std::env;
 use std::fmt;
 use std::process;
+use std::str::FromStr;
 
 use crate::fail;
 
-#[derive(Default)]
+#[derive(Debug, Default)]
 pub struct Optz {
   pub args: BTreeSet<String>,
   pub handler: Option<fn(&Optz) -> Result<()>>,
@@ -22,8 +23,12 @@ pub struct Optz {
 
 impl Optz {
   pub fn new(name: &str) -> Self {
+    Optz::from_args(name, env::args().collect())
+  }
+
+  fn from_args(name: &str, args: Vec<String>) -> Self {
     Self {
-      args: env::args().skip(1).collect(),
+      args: args.into_iter().skip(1).collect(),
       name: name.into(),
       ..Default::default()
     }
@@ -44,14 +49,25 @@ impl Optz {
     self
   }
 
-  pub fn get(&self, name: &str) -> Option<String> {
+  pub fn get<T: FromStr>(&self, name: &str) -> Result<Option<T>>
+  where
+    <T as FromStr>::Err: std::fmt::Display,
+  {
     for opt in &self.options {
       if opt.name != name {
         continue;
       }
-      return opt.value.clone();
+
+      if let Some(value) = &opt.value {
+        return Ok(Some(
+          value
+            .to_string()
+            .parse::<T>()
+            .map_err(|e| anyhow!("{}", e))?,
+        ));
+      }
     }
-    None
+    Ok(None)
   }
 
   pub fn handler(mut self, handler: fn(&Optz) -> Result<()>) -> Self {
@@ -91,35 +107,36 @@ impl Optz {
     }
 
     self.options.push(
-      Opt::new("help")
+      Opt::flag("help")
         .description("Show help")
         .short("-h")
         .handler(Self::help),
     );
 
-    let mut args_iter = self.args.iter();
+    let mut args_iter = self.args.iter().peekable();
     while let Some(arg) = args_iter.next() {
       if arg == "-" {
         continue;
       }
-      let mut has_opt = false;
-      for opt in self.options.iter_mut() {
-        if &opt.long == arg || opt.short == Some(arg.clone()) {
-          if opt.arg.is_some() {
-            opt.value = Some(
-              args_iter
-                .next()
-                .expect("Expected argument for option")
-                .clone(),
-            );
-          } else {
-            opt.value = Some("true".into());
+      if arg.starts_with("-") {
+        for opt in self.options.iter_mut() {
+          if &opt.long == arg || opt.short == Some(arg.clone()) {
+            match opt.arg {
+              Arg::Flag => opt.value = Some("true".to_string()),
+              Arg::Arg => {
+                let next_arg = args_iter.next();
+                match next_arg {
+                  Some(arg) => opt.value = Some(arg.clone()),
+                  None => {
+                    fail!("{}: {}", self.name, "Missing argument")
+                  }
+                }
+              }
+            }
+            break;
           }
-          has_opt = true;
-          break;
         }
-      }
-      if !has_opt {
+      } else {
         self.rest.push(arg.clone());
       }
     }
@@ -164,29 +181,47 @@ impl IntoIterator for Optz {
   }
 }
 
+#[derive(Clone, Debug, Default)]
+pub enum Arg {
+  Arg,
+  #[default]
+  Flag,
+}
+
 #[derive(Clone, Default)]
 pub struct Opt {
+  pub arg: Arg,
   pub description: Option<String>,
   pub handler: Option<fn(&Optz) -> Result<()>>,
   pub long: String,
   pub name: String,
   pub short: Option<String>,
   pub value: Option<String>,
-  pub arg: Option<String>,
 }
 
 impl Opt {
-  pub fn new(name: &str) -> Self {
+  pub fn flag(name: &str) -> Self {
     let long = format!("--{}", name);
     Self {
+      arg: Arg::Flag,
       name: name.to_owned(),
       long: long,
       ..Default::default()
     }
   }
 
-  pub fn arg(mut self, arg: &str) -> Self {
-    self.arg = Some(arg.into());
+  pub fn arg(name: &str) -> Self {
+    let long = format!("--{}", name);
+    Self {
+      arg: Arg::Arg,
+      name: name.to_owned(),
+      long: long,
+      ..Default::default()
+    }
+  }
+
+  pub fn default_value(mut self, value: &str) -> Self {
+    self.value = Some(value.try_into().expect("Invalid value"));
     self
   }
 
@@ -204,20 +239,155 @@ impl Opt {
     self.short = Some(short.into());
     self
   }
-
-  pub fn value(mut self, value: &str) -> Self {
-    self.value = Some(value.into());
-    self
-  }
 }
 
 impl fmt::Debug for Opt {
   fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
     f.debug_struct("Opt")
+      .field("arg", &self.arg)
       .field("description", &self.description)
       .field("handler", &"handler")
       .field("long", &self.long)
+      .field("name", &self.name)
       .field("short", &self.short)
+      .field("value", &self.value)
       .finish()
   }
+}
+
+#[test]
+fn test_flag() {
+  let optz = Optz::from_args(
+    "test",
+    vec!["test".to_string(), "--verbose".to_string()],
+  )
+  .option(Opt::flag("verbose"))
+  .parse();
+  let result: bool = optz.get("verbose").unwrap().unwrap();
+  assert_eq!(result, true);
+}
+
+#[test]
+fn test_args() {
+  let optz = Optz::from_args(
+    "test",
+    vec![
+      "test".to_string(),
+      "--num-items".to_string(),
+      "12".to_string(),
+    ],
+  )
+  .option(Opt::arg("num-items"))
+  .parse();
+  let result: u64 = optz.get("num-items").unwrap().unwrap();
+  assert_eq!(result, 12u64);
+}
+
+#[test]
+fn test_short_option() {
+  let optz = Optz::from_args(
+    "test",
+    vec!["test".to_string(), "-v".to_string()],
+  )
+  .option(Opt::flag("verbose").short("-v"))
+  .parse();
+  let result: bool = optz.get("verbose").unwrap().unwrap();
+  assert_eq!(result, true);
+}
+
+#[test]
+fn test_rest_arguments() {
+  let optz = Optz::from_args(
+    "test",
+    vec![
+      "test".to_string(),
+      "--verbose".to_string(),
+      "file1".to_string(),
+      "file2".to_string(),
+    ],
+  )
+  .option(Opt::flag("verbose"))
+  .parse();
+  assert_eq!(optz.rest, vec!["file1", "file2"]);
+}
+
+#[test]
+fn test_config() {
+  #[derive(Debug, PartialEq)]
+  struct MyConfig {
+    value: i32,
+  }
+  let config = MyConfig { value: 42 };
+  let optz = Optz::new("test").config(config).parse();
+  let retrieved: &MyConfig = optz.get_config().unwrap();
+  assert_eq!(*retrieved, MyConfig { value: 42 });
+}
+
+#[test]
+fn test_default_value() {
+  let optz = Optz::from_args("test", vec!["test".to_string()])
+    .option(Opt::arg("count").default_value("5"))
+    .parse();
+  let result: u32 = optz.get("count").unwrap().unwrap();
+  assert_eq!(result, 5);
+}
+
+#[test]
+#[should_panic(expected = "test: Missing argument")]
+fn test_missing_argument() {
+  let _ = Optz::from_args(
+    "test",
+    vec!["test".to_string(), "--num-items".to_string()],
+  )
+  .option(Opt::arg("num-items"))
+  .parse();
+}
+
+#[test]
+fn test_unknown_option_ignored() {
+  let optz = Optz::from_args(
+    "test",
+    vec!["test".to_string(), "--unknown".to_string()],
+  )
+  .option(Opt::flag("verbose"))
+  .parse();
+  assert!(optz.rest.is_empty());
+}
+
+#[test]
+fn test_usage_default() {
+  let optz = Optz::new("myprog");
+  assert_eq!(optz.usage, Some("Usage: myprog [options]".to_string()));
+}
+
+#[test]
+fn test_multiple_options() {
+  let optz = Optz::from_args(
+    "test",
+    vec![
+      "test".to_string(),
+      "--verbose".to_string(),
+      "-n".to_string(),
+      "10".to_string(),
+    ],
+  )
+  .option(Opt::flag("verbose"))
+  .option(Opt::arg("num").short("-n"))
+  .parse();
+
+  let verbose: bool = optz.get("verbose").unwrap().unwrap();
+  let num: u32 = optz.get("num").unwrap().unwrap();
+
+  assert!(verbose);
+  assert_eq!(num, 10);
+}
+
+#[test]
+fn test_help_option_auto_added() {
+  let optz = Optz::from_args("test", vec!["test".to_string()])
+    .option(Opt::flag("verbose"))
+    .parse();
+
+  let has_help = optz.options.iter().any(|opt| opt.name == "help");
+  assert!(has_help);
 }
