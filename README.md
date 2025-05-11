@@ -15,3 +15,9 @@ let opts = Optz::new("myapp")
       .short("-b"))
   .parse();
 ```
+
+
+## TODO
+
+- [ ] Check types during parsing instead of at `get()`
+- [ ] Remove anyhow dependency
