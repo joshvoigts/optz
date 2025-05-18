@@ -1,9 +1,27 @@
-use anyhow::{anyhow, Result};
 use std::any::Any;
 use std::collections::BTreeSet;
 use std::env;
 use std::fmt;
 use std::str::FromStr;
+
+#[derive(Debug)]
+pub enum OptzError {
+  MissingArgument,
+  Parse(String),
+}
+
+impl std::fmt::Display for OptzError {
+  fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    match self {
+      OptzError::MissingArgument => write!(f, "Missing argument"),
+      OptzError::Parse(msg) => write!(f, "{}", msg),
+    }
+  }
+}
+
+impl std::error::Error for OptzError {}
+
+type Result<T> = std::result::Result<T, OptzError>;
 
 #[derive(Debug, Default)]
 pub struct Optz {
@@ -14,7 +32,7 @@ pub struct Optz {
   pub description: Option<String>,
   pub authors: Vec<String>,
   pub options: Vec<Opt>,
-  pub config: Option<Box<dyn Any>>, // Any user-defined type
+  pub config: Option<Box<dyn Any>>,
   pub rest: Vec<String>,
 }
 
@@ -36,7 +54,6 @@ impl Optz {
     self
   }
 
-  // Retrieve the config as a specific type
   pub fn get_config<T: 'static>(&self) -> Option<&T> {
     self.config.as_ref().and_then(|c| c.downcast_ref::<T>())
   }
@@ -48,7 +65,7 @@ impl Optz {
 
   pub fn get<T: FromStr>(&self, name: &str) -> Result<Option<T>>
   where
-    <T as FromStr>::Err: std::fmt::Display,
+    <T as FromStr>::Err: std::fmt::Debug,
   {
     for opt in &self.options {
       if opt.name != name {
@@ -60,7 +77,7 @@ impl Optz {
           value
             .to_string()
             .parse::<T>()
-            .map_err(|e| anyhow!("{}", e))?,
+            .map_err(|e| OptzError::Parse(format!("{:?}", e)))?,
         ));
       }
     }
@@ -125,7 +142,7 @@ impl Optz {
                 match next_arg {
                   Some(arg) => opt.value = Some(arg.clone()),
                   None => {
-                    return Err(anyhow!("{}: {}", self.name, "Missing argument"));
+                    return Err(OptzError::MissingArgument);
                   }
                 }
               }
@@ -143,7 +160,9 @@ impl Optz {
         if let Some(handler) = opt.handler {
           let res = handler(&self);
           if !res.is_ok() {
-            return Err(anyhow!("{}: {}", self.name, res.unwrap_err()))
+            return Err(OptzError::Parse(
+              res.unwrap_err().to_string(),
+            ));
           }
         }
       }
@@ -152,7 +171,7 @@ impl Optz {
     if let Some(handler) = self.handler {
       let res = handler(&self);
       if !res.is_ok() {
-        return Err(anyhow!("{}: {}", self.name, res.unwrap_err()));
+        return Err(OptzError::Parse(res.unwrap_err().to_string()));
       }
     }
 
@@ -218,7 +237,7 @@ impl Opt {
   }
 
   pub fn default_value(mut self, value: &str) -> Self {
-    self.value = Some(value.try_into().expect("Invalid value"));
+    self.value = Some(value.to_string());
     self
   }
 

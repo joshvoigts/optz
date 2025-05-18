@@ -9,4 +9,3 @@ repository = "https://github.com/joshvoigts/optz"
 readme = "README.md"
 
 [dependencies]
-anyhow = "1.0.98"
