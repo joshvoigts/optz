@@ -3,10 +3,7 @@ use std::any::Any;
 use std::collections::BTreeSet;
 use std::env;
 use std::fmt;
-use std::process;
 use std::str::FromStr;
-
-use crate::fail;
 
 #[derive(Debug, Default)]
 pub struct Optz {
@@ -26,7 +23,7 @@ impl Optz {
     Optz::from_args(name, env::args().collect())
   }
 
-  fn from_args(name: &str, args: Vec<String>) -> Self {
+  pub fn from_args(name: &str, args: Vec<String>) -> Self {
     Self {
       args: args.into_iter().skip(1).collect(),
       name: name.into(),
@@ -93,7 +90,7 @@ impl Optz {
       }
       println!("{}", res);
     }
-    process::exit(0);
+    Ok(())
   }
 
   pub fn option(mut self, opt: Opt) -> Self {
@@ -101,7 +98,7 @@ impl Optz {
     self
   }
 
-  pub fn parse(mut self) -> Self {
+  pub fn parse(mut self) -> Result<Self> {
     if self.usage.is_none() {
       self.usage = Some(format!("Usage: {} [options]", self.name));
     }
@@ -128,7 +125,7 @@ impl Optz {
                 match next_arg {
                   Some(arg) => opt.value = Some(arg.clone()),
                   None => {
-                    fail!("{}: {}", self.name, "Missing argument")
+                    return Err(anyhow!("{}: {}", self.name, "Missing argument"));
                   }
                 }
               }
@@ -146,7 +143,7 @@ impl Optz {
         if let Some(handler) = opt.handler {
           let res = handler(&self);
           if !res.is_ok() {
-            fail!("{}: {}", self.name, res.unwrap_err());
+            return Err(anyhow!("{}: {}", self.name, res.unwrap_err()))
           }
         }
       }
@@ -155,7 +152,7 @@ impl Optz {
     if let Some(handler) = self.handler {
       let res = handler(&self);
       if !res.is_ok() {
-        fail!("{}: {}", self.name, res.unwrap_err());
+        return Err(anyhow!("{}: {}", self.name, res.unwrap_err()));
       }
     }
 
@@ -163,7 +160,7 @@ impl Optz {
       let _ = self.help();
     }
 
-    self
+    Ok(self)
   }
 
   pub fn usage<S: Into<String>>(mut self, text: S) -> Self {
@@ -262,7 +259,7 @@ fn test_flag() {
     vec!["test".to_string(), "--verbose".to_string()],
   )
   .option(Opt::flag("verbose"))
-  .parse();
+  .parse().unwrap();
   let result: bool = optz.get("verbose").unwrap().unwrap();
   assert_eq!(result, true);
 }
@@ -278,7 +275,7 @@ fn test_args() {
     ],
   )
   .option(Opt::arg("num-items"))
-  .parse();
+  .parse().unwrap();
   let result: u64 = optz.get("num-items").unwrap().unwrap();
   assert_eq!(result, 12u64);
 }
@@ -290,7 +287,7 @@ fn test_short_option() {
     vec!["test".to_string(), "-v".to_string()],
   )
   .option(Opt::flag("verbose").short("-v"))
-  .parse();
+  .parse().unwrap();
   let result: bool = optz.get("verbose").unwrap().unwrap();
   assert_eq!(result, true);
 }
@@ -307,7 +304,7 @@ fn test_rest_arguments() {
     ],
   )
   .option(Opt::flag("verbose"))
-  .parse();
+  .parse().unwrap();
   assert_eq!(optz.rest, vec!["file1", "file2"]);
 }
 
@@ -318,7 +315,7 @@ fn test_config() {
     value: i32,
   }
   let config = MyConfig { value: 42 };
-  let optz = Optz::new("test").config(config).parse();
+  let optz = Optz::new("test").config(config).parse().unwrap();
   let retrieved: &MyConfig = optz.get_config().unwrap();
   assert_eq!(*retrieved, MyConfig { value: 42 });
 }
@@ -327,7 +324,7 @@ fn test_config() {
 fn test_default_value() {
   let optz = Optz::from_args("test", vec!["test".to_string()])
     .option(Opt::arg("count").default_value("5"))
-    .parse();
+    .parse().unwrap();
   let result: u32 = optz.get("count").unwrap().unwrap();
   assert_eq!(result, 5);
 }
@@ -340,7 +337,7 @@ fn test_missing_argument() {
     vec!["test".to_string(), "--num-items".to_string()],
   )
   .option(Opt::arg("num-items"))
-  .parse();
+  .parse().unwrap();
 }
 
 #[test]
@@ -350,13 +347,13 @@ fn test_unknown_option_ignored() {
     vec!["test".to_string(), "--unknown".to_string()],
   )
   .option(Opt::flag("verbose"))
-  .parse();
+  .parse().unwrap();
   assert!(optz.rest.is_empty());
 }
 
 #[test]
 fn test_usage_default() {
-  let optz = Optz::new("myprog");
+  let optz = Optz::new("myprog").parse().unwrap();
   assert_eq!(optz.usage, Some("Usage: myprog [options]".to_string()));
 }
 
@@ -373,7 +370,7 @@ fn test_multiple_options() {
   )
   .option(Opt::flag("verbose"))
   .option(Opt::arg("num").short("-n"))
-  .parse();
+  .parse().unwrap();
 
   let verbose: bool = optz.get("verbose").unwrap().unwrap();
   let num: u32 = optz.get("num").unwrap().unwrap();
@@ -386,7 +383,7 @@ fn test_multiple_options() {
 fn test_help_option_auto_added() {
   let optz = Optz::from_args("test", vec!["test".to_string()])
     .option(Opt::flag("verbose"))
-    .parse();
+    .parse().unwrap();
 
   let has_help = optz.options.iter().any(|opt| opt.name == "help");
   assert!(has_help);
