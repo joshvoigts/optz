@@ -72,10 +72,10 @@ impl Optz {
         continue;
       }
 
-      if let Some(value) = &opt.value {
+      if !opt.values.is_empty() {
+        let value = opt.values.first().unwrap().clone();
         return Ok(Some(
           value
-            .to_string()
             .parse::<T>()
             .map_err(|e| OptzError::Parse(format!("{:?}", e)))?,
         ));
@@ -136,11 +136,23 @@ impl Optz {
         for opt in self.options.iter_mut() {
           if &opt.long == arg || opt.short == Some(arg.clone()) {
             match opt.arg {
-              Arg::Flag => opt.value = Some("true".to_string()),
+              Arg::Flag => {
+                if opt.multiple {
+                  opt.values.push("true".to_string());
+                } else {
+                  opt.values = vec!["true".to_string()];
+                }
+              }
               Arg::Arg => {
                 let next_arg = args_iter.next();
                 match next_arg {
-                  Some(arg) => opt.value = Some(arg.clone()),
+                  Some(arg) => {
+                    if opt.multiple {
+                      opt.values.push(arg.clone());
+                    } else {
+                      opt.values = vec![arg.clone()];
+                    }
+                  }
                   None => {
                     return Err(OptzError::MissingArgument);
                   }
@@ -156,7 +168,7 @@ impl Optz {
     }
 
     for opt in self.options.iter() {
-      if opt.value.is_some() {
+      if !opt.values.is_empty() {
         if let Some(handler) = opt.handler {
           let res = handler(&self);
           if !res.is_ok() {
@@ -210,9 +222,10 @@ pub struct Opt {
   pub description: Option<String>,
   pub handler: Option<fn(&Optz) -> Result<()>>,
   pub long: String,
+  pub multiple: bool,
   pub name: String,
   pub short: Option<String>,
-  pub value: Option<String>,
+  pub values: Vec<String>,
 }
 
 impl Opt {
@@ -236,8 +249,13 @@ impl Opt {
     }
   }
 
+  pub fn multiple(mut self, multiple: bool) -> Self {
+    self.multiple = multiple;
+    self
+  }
+
   pub fn default_value(mut self, value: &str) -> Self {
-    self.value = Some(value.to_string());
+    self.values = vec![value.to_owned()];
     self
   }
 
@@ -266,7 +284,7 @@ impl fmt::Debug for Opt {
       .field("long", &self.long)
       .field("name", &self.name)
       .field("short", &self.short)
-      .field("value", &self.value)
+      .field("values", &self.values)
       .finish()
   }
 }
