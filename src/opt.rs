@@ -68,20 +68,28 @@ impl Optz {
     <T as FromStr>::Err: std::fmt::Debug,
   {
     for opt in &self.options {
-      if opt.name != name {
+      if opt.name != name || opt.values.is_empty() {
         continue;
       }
 
-      if !opt.values.is_empty() {
-        let value = opt.values.first().unwrap().clone();
-        return Ok(Some(
-          value
-            .parse::<T>()
-            .map_err(|e| OptzError::Parse(format!("{:?}", e)))?,
-        ));
-      }
+      let value = opt.values.first().unwrap().clone();
+      return Ok(Some(
+        value
+          .parse::<T>()
+          .map_err(|e| OptzError::Parse(format!("{:?}", e)))?,
+      ));
     }
     Ok(None)
+  }
+
+  pub fn get_values(&self, name: &str) -> Result<Vec<String>> {
+    for opt in &self.options {
+      if opt.name != name {
+        continue;
+      }
+      return Ok(opt.values.clone());
+    }
+    Ok(vec![])
   }
 
   pub fn handler(mut self, handler: fn(&Optz) -> Result<()>) -> Self {
