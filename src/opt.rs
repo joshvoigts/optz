@@ -1,31 +1,12 @@
+use crate::error::{OptzError, Result};
 use std::any::Any;
-use std::collections::BTreeSet;
 use std::env;
 use std::fmt;
 use std::str::FromStr;
 
-#[derive(Debug)]
-pub enum OptzError {
-  MissingArgument,
-  Parse(String),
-}
-
-impl std::fmt::Display for OptzError {
-  fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-    match self {
-      OptzError::MissingArgument => write!(f, "Missing argument"),
-      OptzError::Parse(msg) => write!(f, "{}", msg),
-    }
-  }
-}
-
-impl std::error::Error for OptzError {}
-
-type Result<T> = std::result::Result<T, OptzError>;
-
 #[derive(Debug, Default)]
 pub struct Optz {
-  pub args: BTreeSet<String>,
+  pub args: Vec<String>,
   pub handler: Option<fn(&Optz) -> Result<()>>,
   pub name: String,
   pub usage: Option<String>,
@@ -41,9 +22,13 @@ impl Optz {
     Optz::from_args(name, env::args().collect())
   }
 
-  pub fn from_args(name: &str, args: Vec<String>) -> Self {
+  pub fn from_args<T: AsRef<str>>(name: &str, args: Vec<T>) -> Self {
     Self {
-      args: args.into_iter().skip(1).collect(),
+      args: args
+        .into_iter()
+        .skip(1)
+        .map(|arg| arg.as_ref().to_string())
+        .collect::<Vec<_>>(), // Collect into Vec
       name: name.into(),
       ..Default::default()
     }
@@ -68,7 +53,7 @@ impl Optz {
     <T as FromStr>::Err: std::fmt::Debug,
   {
     for opt in &self.options {
-      if opt.name != name || opt.values.is_empty() {
+      if opt.name != name {
         continue;
       }
 
@@ -82,13 +67,25 @@ impl Optz {
     Ok(None)
   }
 
-  pub fn get_values(&self, name: &str) -> Result<Vec<String>> {
+  pub fn get_values<T: FromStr>(&self, name: &str) -> Result<Vec<T>>
+  where
+    <T as FromStr>::Err: std::fmt::Debug,
+  {
     for opt in &self.options {
       if opt.name != name {
         continue;
       }
-      return Ok(opt.values.clone());
+
+      return opt
+        .values
+        .iter()
+        .map(|s| {
+          s.parse::<T>()
+            .map_err(|e| OptzError::Parse(format!("{:?}", e)))
+        })
+        .collect::<Result<Vec<T>>>();
     }
+
     Ok(vec![])
   }
 

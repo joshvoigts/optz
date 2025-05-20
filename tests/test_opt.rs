@@ -1,10 +1,11 @@
-use optz::{Opt, Optz};
+use optz::{Opt, Optz, OptzError};
+use std::sync::{LazyLock, Mutex};
 
 #[test]
 fn test_flag() {
   let optz = Optz::from_args(
     "test",
-    vec!["test".to_string(), "--verbose".to_string()],
+    vec!["test", "--verbose"],
   )
   .option(Opt::flag("verbose"))
   .parse()
@@ -18,9 +19,9 @@ fn test_args() {
   let optz = Optz::from_args(
     "test",
     vec![
-      "test".to_string(),
-      "--num-items".to_string(),
-      "12".to_string(),
+      "test",
+      "--num-items",
+      "12",
     ],
   )
   .option(Opt::arg("num-items"))
@@ -34,7 +35,7 @@ fn test_args() {
 fn test_short_option() {
   let optz = Optz::from_args(
     "test",
-    vec!["test".to_string(), "-v".to_string()],
+    vec!["test", "-v"],
   )
   .option(Opt::flag("verbose").short("-v"))
   .parse()
@@ -48,10 +49,10 @@ fn test_rest_arguments() {
   let optz = Optz::from_args(
     "test",
     vec![
-      "test".to_string(),
-      "--verbose".to_string(),
-      "file1".to_string(),
-      "file2".to_string(),
+      "test",
+      "--verbose",
+      "file1",
+      "file2",
     ],
   )
   .option(Opt::flag("verbose"))
@@ -74,7 +75,7 @@ fn test_config() {
 
 #[test]
 fn test_default_value() {
-  let optz = Optz::from_args("test", vec!["test".to_string()])
+  let optz = Optz::from_args("test", vec!["test"])
     .option(Opt::arg("count").default_value("5"))
     .parse()
     .unwrap();
@@ -83,22 +84,21 @@ fn test_default_value() {
 }
 
 #[test]
-#[should_panic(expected = "test: Missing argument")]
 fn test_missing_argument() {
-  let _ = Optz::from_args(
+  let optz = Optz::from_args(
     "test",
-    vec!["test".to_string(), "--num-items".to_string()],
+    vec!["test", "--num-items"],
   )
   .option(Opt::arg("num-items"))
-  .parse()
-  .unwrap();
+  .parse();
+  assert!(optz.is_err());
 }
 
 #[test]
 fn test_unknown_option_ignored() {
   let optz = Optz::from_args(
     "test",
-    vec!["test".to_string(), "--unknown".to_string()],
+    vec!["test", "--unknown"],
   )
   .option(Opt::flag("verbose"))
   .parse()
@@ -117,10 +117,10 @@ fn test_multiple_options() {
   let optz = Optz::from_args(
     "test",
     vec![
-      "test".to_string(),
-      "--verbose".to_string(),
-      "-n".to_string(),
-      "10".to_string(),
+      "test",
+      "--verbose",
+      "-n",
+      "10",
     ],
   )
   .option(Opt::flag("verbose"))
@@ -137,11 +137,83 @@ fn test_multiple_options() {
 
 #[test]
 fn test_help_option_auto_added() {
-  let optz = Optz::from_args("test", vec!["test".to_string()])
+  let optz = Optz::from_args("test", vec!["test"])
     .option(Opt::flag("verbose"))
     .parse()
     .unwrap();
 
   let has_help = optz.options.iter().any(|opt| opt.name == "help");
   assert!(has_help);
+}
+
+#[test]
+fn test_multiple_values() {
+  let optz = Optz::from_args(
+    "test",
+    vec!["test", "--num-items", "10", "--num-items", "20"],
+  )
+  .option(Opt::arg("num-items").multiple(true))
+  .parse()
+  .unwrap();
+  let result: Vec<u32> = optz.get_values("num-items").unwrap();
+  assert_eq!(result, vec![10, 20]);
+}
+
+// Use `LazyLock` to initialize the static variable lazily
+static CALLED: LazyLock<Mutex<bool>> =
+  LazyLock::new(|| Mutex::new(false));
+
+fn handler(_optz: &Optz) -> Result<(), OptzError> {
+  let mut called = CALLED.lock().unwrap();
+  *called = true;
+  Ok(())
+}
+
+#[test]
+fn test_custom_handler() {
+  let _ = Optz::from_args(
+    "test",
+    vec!["test", "--test"],
+  )
+  .option(Opt::flag("test").handler(handler))
+  .parse()
+  .unwrap();
+
+  assert!(*CALLED.lock().unwrap());
+}
+
+#[test]
+fn test_handler_error() {
+  let result = Optz::from_args(
+    "test",
+    vec!["test", "--error"],
+  )
+  .option(
+    Opt::flag("error")
+      .handler(|_| Err(OptzError::Parse("Custom error".to_string()))),
+  )
+  .parse();
+  assert!(result.is_err());
+  if let Err(OptzError::Parse(msg)) = result {
+    assert_eq!(msg, "Custom error");
+  } else {
+    panic!("Unexpected error type");
+  }
+}
+
+#[test]
+fn test_short_and_long_options() {
+  let optz = Optz::from_args(
+    "test",
+    vec![
+      "test",
+      "-v",
+      "--verbose",
+    ],
+  )
+  .option(Opt::flag("verbose").short("-v"))
+  .parse()
+  .unwrap();
+  let result: bool = optz.get("verbose").unwrap().unwrap();
+  assert_eq!(result, true);
 }
