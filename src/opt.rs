@@ -57,13 +57,17 @@ impl Optz {
         continue;
       }
 
-      let value = opt.values.first().unwrap().clone();
-      return Ok(Some(
-        value
-          .parse::<T>()
-          .map_err(|e| OptzError::Parse(format!("{:?}", e)))?,
-      ));
+      if let Some(value) = opt.values.first() {
+        return Ok(Some(
+          value
+            .parse::<T>()
+            .map_err(|e| OptzError::Parse(format!("{:?}", e)))?,
+        ));
+      } else {
+        return Ok(None);
+      }
     }
+
     Ok(None)
   }
 
