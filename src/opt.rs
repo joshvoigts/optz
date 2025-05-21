@@ -196,10 +196,6 @@ impl Optz {
       }
     }
 
-    if self.args.len() == 0 {
-      let _ = self.help();
-    }
-
     Ok(self)
   }
 
