@@ -98,6 +98,10 @@ impl Optz {
     self
   }
 
+  pub fn has(&self, name: &str) -> Result<bool> {
+    Ok(self.get::<bool>(name)?.unwrap_or(false))
+  }
+
   fn help(self: &Self) -> Result<()> {
     if let Some(usage) = &self.usage {
       println!("{}", usage);
