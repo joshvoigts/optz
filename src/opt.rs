@@ -1,4 +1,5 @@
 use crate::error::{OptzError, Result};
+use std;
 use std::any::Any;
 use std::env;
 use std::fmt;
@@ -120,7 +121,7 @@ impl Optz {
       }
       println!("{}", res);
     }
-    Ok(())
+    std::process::exit(0);
   }
 
   pub fn option(mut self, opt: Opt) -> Self {
